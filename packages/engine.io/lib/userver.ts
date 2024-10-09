@@ -23,6 +23,10 @@ export interface uOptions {
   maxBackpressure?: number;
 }
 
+/**
+ * An Engine.IO server based on the `uWebSockets.js` package.
+ */
+// TODO export it into its own package
 export class uServer extends BaseServer {
   protected init() {}
   protected cleanup() {}
@@ -64,7 +68,7 @@ export class uServer extends BaseServer {
    */
   public attach(
     app /* : TemplatedApp */,
-    options: AttachOptions & uOptions = {}
+    options: AttachOptions & uOptions = {},
   ) {
     const path = this._computePath(options);
     (app as TemplatedApp)
@@ -84,7 +88,7 @@ export class uServer extends BaseServer {
         },
         message: (ws, message, isBinary) => {
           ws.getUserData().transport.onData(
-            isBinary ? message : Buffer.from(message).toString()
+            isBinary ? message : Buffer.from(message).toString(),
           );
         },
         close: (ws, code, message) => {
@@ -96,7 +100,7 @@ export class uServer extends BaseServer {
   override _applyMiddlewares(
     req: any,
     res: any,
-    callback: (err?: any) => void
+    callback: (err?: any) => void,
   ): void {
     if (this.middlewares.length === 0) {
       return callback();
@@ -116,7 +120,7 @@ export class uServer extends BaseServer {
 
   private handleRequest(
     res: HttpResponse,
-    req: HttpRequest & { res: any; _query: any }
+    req: HttpRequest & { res: any; _query: any },
   ) {
     debug('handling "%s" http request "%s"', req.getMethod(), req.getUrl());
     this.prepare(req, res);
@@ -158,7 +162,7 @@ export class uServer extends BaseServer {
   private handleUpgrade(
     res: HttpResponse,
     req: HttpRequest & { res: any; _query: any },
-    context
+    context,
   ) {
     debug("on upgrade");
 
@@ -185,13 +189,13 @@ export class uServer extends BaseServer {
         const client = this.clients[id];
         if (!client) {
           debug("upgrade attempt for closed client");
-          res.close();
+          return res.close();
         } else if (client.upgrading) {
           debug("transport has already been trying to upgrade");
-          res.close();
+          return res.close();
         } else if (client.upgraded) {
           debug("transport had already been upgraded");
-          res.close();
+          return res.close();
         } else {
           debug("upgrading existing transport");
           transport = this.createTransport(req._query.transport, req);
@@ -202,7 +206,7 @@ export class uServer extends BaseServer {
           req._query.transport,
           req,
           (errorCode, errorContext) =>
-            this.abortRequest(res, errorCode, errorContext)
+            this.abortRequest(res, errorCode, errorContext),
         );
         if (!transport) {
           return;
@@ -219,7 +223,7 @@ export class uServer extends BaseServer {
         req.getHeader("sec-websocket-key"),
         req.getHeader("sec-websocket-protocol"),
         req.getHeader("sec-websocket-extensions"),
-        context
+        context,
       );
     };
 
@@ -235,7 +239,7 @@ export class uServer extends BaseServer {
   private abortRequest(
     res: HttpResponse | ResponseWrapper,
     errorCode,
-    errorContext
+    errorContext,
   ) {
     const statusCode =
       errorCode === Server.errors.FORBIDDEN
@@ -252,7 +256,7 @@ export class uServer extends BaseServer {
       JSON.stringify({
         code: errorCode,
         message,
-      })
+      }),
     );
   }
 }

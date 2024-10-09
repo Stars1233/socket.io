@@ -80,7 +80,7 @@ export class Socket extends EventEmitter {
     server: BaseServer,
     transport: Transport,
     req: EngineRequest,
-    protocol: number
+    protocol: number,
   ) {
     super();
     this.id = id;
@@ -125,7 +125,7 @@ export class Socket extends EventEmitter {
         pingInterval: this.server.opts.pingInterval,
         pingTimeout: this.server.opts.pingTimeout,
         maxPayload: this.server.opts.maxHttpBufferSize,
-      })
+      }),
     );
 
     if (this.server.opts.initialPacket) {
@@ -212,7 +212,7 @@ export class Socket extends EventEmitter {
     this.pingIntervalTimer = setTimeout(() => {
       debug(
         "writing ping packet - expecting pong within %sms",
-        this.server.opts.pingTimeout
+        this.server.opts.pingTimeout,
       );
       this.sendPacket("ping");
       this.resetPingTimeout();
@@ -233,7 +233,7 @@ export class Socket extends EventEmitter {
       },
       this.protocol === 3
         ? this.server.opts.pingInterval + this.server.opts.pingTimeout
-        : this.server.opts.pingTimeout
+        : this.server.opts.pingTimeout,
     );
   }
 
@@ -293,7 +293,7 @@ export class Socket extends EventEmitter {
     debug(
       'might upgrade socket transport from "%s" to "%s"',
       this.transport.name,
-      transport.name
+      transport.name,
     );
 
     this.upgrading = true;
@@ -468,7 +468,7 @@ export class Socket extends EventEmitter {
     type: PacketType,
     data?: RawData,
     options: SendOptions = {},
-    callback?: SendCallback
+    callback?: SendCallback,
   ) {
     if ("function" === typeof options) {
       callback = options;
@@ -554,6 +554,13 @@ export class Socket extends EventEmitter {
    * @return {Socket} for chaining
    */
   public close(discard?: boolean) {
+    if (
+      discard &&
+      (this.readyState === "open" || this.readyState === "closing")
+    ) {
+      return this.closeTransport(discard);
+    }
+
     if ("open" !== this.readyState) return;
 
     this.readyState = "closing";
@@ -561,7 +568,7 @@ export class Socket extends EventEmitter {
     if (this.writeBuffer.length) {
       debug(
         "there are %d remaining packets in the buffer, waiting for the 'drain' event",
-        this.writeBuffer.length
+        this.writeBuffer.length,
       );
       this.once("drain", () => {
         debug("all packets have been sent, closing the transport");
@@ -570,7 +577,7 @@ export class Socket extends EventEmitter {
       return;
     }
 
-    debug("the buffer is empty, closing the transport right away", discard);
+    debug("the buffer is empty, closing the transport right away");
     this.closeTransport(discard);
   }
 
@@ -581,7 +588,7 @@ export class Socket extends EventEmitter {
    * @private
    */
   private closeTransport(discard: boolean) {
-    debug("closing the transport (discard? %s)", discard);
+    debug("closing the transport (discard? %s)", !!discard);
     if (discard) this.transport.discard();
     this.transport.close(this.onClose.bind(this, "forced close"));
   }

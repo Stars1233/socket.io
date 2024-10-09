@@ -7,11 +7,7 @@ import accepts = require("accepts");
 import { pipeline } from "stream";
 import path = require("path");
 import { attach, Server as Engine, uServer } from "engine.io";
-import type {
-  ServerOptions as EngineOptions,
-  AttachOptions,
-  BaseServer,
-} from "engine.io";
+import type { ServerOptions as EngineOptions, AttachOptions } from "engine.io";
 import { Client } from "./client";
 import { EventEmitter } from "events";
 import { ExtendedError, Namespace, ServerReservedEventsMap } from "./namespace";
@@ -25,7 +21,8 @@ import {
 import * as parser from "socket.io-parser";
 import type { Encoder } from "socket.io-parser";
 import debugModule from "debug";
-import { Socket, DisconnectReason } from "./socket";
+import { Socket } from "./socket";
+import { DisconnectReason } from "./socket-types";
 import type { BroadcastOperator, RemoteSocket } from "./broadcast-operator";
 import {
   EventsMap,
@@ -51,7 +48,7 @@ const dotMapRegex = /\.map/;
 type ParentNspNameMatchFn = (
   name: string,
   auth: { [key: string]: any },
-  fn: (err: Error | null, success: boolean) => void
+  fn: (err: Error | null, success: boolean) => void,
 ) => void;
 
 type AdapterConstructor = typeof Adapter | ((nsp: Namespace) => Adapter);
@@ -141,10 +138,69 @@ interface ServerOptions extends EngineOptions, AttachOptions {
  * io.listen(3000);
  */
 export class Server<
+  /**
+   * Types for the events received from the clients.
+   *
+   * @example
+   * interface ClientToServerEvents {
+   *   hello: (arg: string) => void;
+   * }
+   *
+   * const io = new Server<ClientToServerEvents>();
+   *
+   * io.on("connection", (socket) => {
+   *   socket.on("hello", (arg) => {
+   *     // `arg` is inferred as string
+   *   });
+   * });
+   */
   ListenEvents extends EventsMap = DefaultEventsMap,
+  /**
+   * Types for the events sent to the clients.
+   *
+   * @example
+   * interface ServerToClientEvents {
+   *   hello: (arg: string) => void;
+   * }
+   *
+   * const io = new Server<DefaultEventMap, ServerToClientEvents>();
+   *
+   * io.emit("hello", "world");
+   */
   EmitEvents extends EventsMap = ListenEvents,
+  /**
+   * Types for the events received from and sent to the other servers.
+   *
+   * @example
+   * interface InterServerEvents {
+   *   ping: (arg: number) => void;
+   * }
+   *
+   * const io = new Server<DefaultEventMap, DefaultEventMap, ServerToClientEvents>();
+   *
+   * io.serverSideEmit("ping", 123);
+   *
+   * io.on("ping", (arg) => {
+   *   // `arg` is inferred as number
+   * });
+   */
   ServerSideEvents extends EventsMap = DefaultEventsMap,
-  SocketData = any
+  /**
+   * Additional properties that can be attached to the socket instance.
+   *
+   * Note: any property can be attached directly to the socket instance (`socket.foo = "bar"`), but the `data` object
+   * will be included when calling {@link Server#fetchSockets}.
+   *
+   * @example
+   * io.on("connection", (socket) => {
+   *   socket.data.eventsCount = 0;
+   *
+   *   socket.onAny(() => {
+   *     socket.data.eventsCount++;
+   *   });
+   * });
+   */
+  SocketData = any,
 > extends StrictEventEmitter<
   ServerSideEvents,
   RemoveAcknowledgements<EmitEvents>,
@@ -168,7 +224,7 @@ export class Server<
    * const clientsCount = io.engine.clientsCount;
    *
    */
-  public engine: BaseServer;
+  public engine: Engine;
   /**
    * The underlying Node.js HTTP server.
    *
@@ -218,7 +274,7 @@ export class Server<
   private _corsMiddleware: (
     req: http.IncomingMessage,
     res: http.ServerResponse,
-    next: () => void
+    next: () => void,
   ) => void;
 
   /**
@@ -231,11 +287,11 @@ export class Server<
   constructor(srv?: TServerInstance | number, opts?: Partial<ServerOptions>);
   constructor(
     srv: undefined | Partial<ServerOptions> | TServerInstance | number,
-    opts?: Partial<ServerOptions>
+    opts?: Partial<ServerOptions>,
   );
   constructor(
     srv: undefined | Partial<ServerOptions> | TServerInstance | number,
-    opts: Partial<ServerOptions> = {}
+    opts: Partial<ServerOptions> = {},
   ) {
     super();
     if (
@@ -258,7 +314,7 @@ export class Server<
           maxDisconnectionDuration: 2 * 60 * 1000,
           skipMiddlewares: true,
         },
-        opts.connectionStateRecovery
+        opts.connectionStateRecovery,
       );
       this.adapter(opts.adapter || SessionAwareAdapter);
     } else {
@@ -308,8 +364,8 @@ export class Server<
     fn: (
       nsp:
         | Namespace<ListenEvents, EmitEvents, ServerSideEvents, SocketData>
-        | false
-    ) => void
+        | false,
+    ) => void,
   ): void {
     if (this.parentNsps.size === 0) return fn(false);
 
@@ -356,7 +412,7 @@ export class Server<
     this.clientPathRegex = new RegExp(
       "^" +
         escapedPath +
-        "/socket\\.io(\\.msgpack|\\.esm)?(\\.min)?\\.js(\\.map)?(?:\\?|$)"
+        "/socket\\.io(\\.msgpack|\\.esm)?(\\.min)?\\.js(\\.map)?(?:\\?|$)",
     );
     return this;
   }
@@ -383,7 +439,7 @@ export class Server<
   public adapter(): AdapterConstructor | undefined;
   public adapter(v: AdapterConstructor): this;
   public adapter(
-    v?: AdapterConstructor
+    v?: AdapterConstructor,
   ): AdapterConstructor | undefined | this {
     if (!arguments.length) return this._adapter;
     this._adapter = v;
@@ -402,7 +458,7 @@ export class Server<
    */
   public listen(
     srv: TServerInstance | number,
-    opts: Partial<ServerOptions> = {}
+    opts: Partial<ServerOptions> = {},
   ): this {
     return this.attach(srv, opts);
   }
@@ -416,7 +472,7 @@ export class Server<
    */
   public attach(
     srv: TServerInstance | number,
-    opts: Partial<ServerOptions> = {}
+    opts: Partial<ServerOptions> = {},
   ): this {
     if ("function" == typeof srv) {
       const msg =
@@ -501,7 +557,7 @@ export class Server<
         res.writeHeader("cache-control", "public, max-age=0");
         res.writeHeader(
           "content-type",
-          "application/" + (isMap ? "json" : "javascript") + "; charset=utf-8"
+          "application/" + (isMap ? "json" : "javascript") + "; charset=utf-8",
         );
         res.writeHeader("etag", expectedEtag);
 
@@ -522,7 +578,7 @@ export class Server<
    */
   private initEngine(
     srv: TServerInstance,
-    opts: EngineOptions & AttachOptions
+    opts: EngineOptions & AttachOptions,
   ): void {
     // initialize engine
     debug("creating engine.io instance with opts %j", opts);
@@ -598,7 +654,7 @@ export class Server<
     res.setHeader("Cache-Control", "public, max-age=0");
     res.setHeader(
       "Content-Type",
-      "application/" + (isMap ? "json" : "javascript") + "; charset=utf-8"
+      "application/" + (isMap ? "json" : "javascript") + "; charset=utf-8",
     );
     res.setHeader("ETag", expectedEtag);
 
@@ -614,10 +670,10 @@ export class Server<
   private static sendFile(
     filename: string,
     req: http.IncomingMessage,
-    res: http.ServerResponse
+    res: http.ServerResponse,
   ): void {
     const readStream = createReadStream(
-      path.join(__dirname, "../client-dist/", filename)
+      path.join(__dirname, "../client-dist/", filename),
     );
     const encoding = accepts(req).encodings(["br", "gzip", "deflate"]);
 
@@ -652,7 +708,9 @@ export class Server<
    * @param engine engine.io (or compatible) server
    * @return self
    */
-  public bind(engine: BaseServer): this {
+  public bind(engine: any): this {
+    // TODO apply strict types to the engine: "connection" event, `close()` and a method to serve static content
+    //  this would allow to provide any custom engine, like one based on Deno or Bun built-in HTTP server
     this.engine = engine;
     this.engine.on("connection", this.onconnection.bind(this));
     return this;
@@ -696,8 +754,8 @@ export class Server<
   public of(
     name: string | RegExp | ParentNspNameMatchFn,
     fn?: (
-      socket: Socket<ListenEvents, EmitEvents, ServerSideEvents, SocketData>
-    ) => void
+      socket: Socket<ListenEvents, EmitEvents, ServerSideEvents, SocketData>,
+    ) => void,
   ): Namespace<ListenEvents, EmitEvents, ServerSideEvents, SocketData> {
     if (typeof name === "function" || name instanceof RegExp) {
       const parentNsp = new ParentNamespace(this);
@@ -707,7 +765,7 @@ export class Server<
       } else {
         this.parentNsps.set(
           (nsp, conn, next) => next(null, (name as RegExp).test(nsp)),
-          parentNsp
+          parentNsp,
         );
         this.parentNamespacesFromRegExp.set(name, parentNsp);
       }
@@ -746,14 +804,16 @@ export class Server<
    *
    * @param [fn] optional, called as `fn([err])` on error OR all conns closed
    */
-  public close(fn?: (err?: Error) => void): void {
-    this._nsps.forEach((nsp) => {
-      nsp.sockets.forEach((socket) => {
-        socket._onclose("server shutting down");
-      });
+  public async close(fn?: (err?: Error) => void): Promise<void> {
+    await Promise.allSettled(
+      [...this._nsps.values()].map(async (nsp) => {
+        nsp.sockets.forEach((socket) => {
+          socket._onclose("server shutting down");
+        });
 
-      nsp.adapter.close();
-    });
+        await nsp.adapter.close();
+      }),
+    );
 
     this.engine.close();
 
@@ -781,8 +841,8 @@ export class Server<
   public use(
     fn: (
       socket: Socket<ListenEvents, EmitEvents, ServerSideEvents, SocketData>,
-      next: (err?: ExtendedError) => void
-    ) => void
+      next: (err?: ExtendedError) => void,
+    ) => void,
   ): this {
     this.sockets.use(fn);
     return this;
@@ -1091,11 +1151,11 @@ export class Server<
  * Expose main namespace (/).
  */
 
-const emitterMethods = Object.keys(EventEmitter.prototype).filter(function (
-  key
-) {
-  return typeof EventEmitter.prototype[key] === "function";
-});
+const emitterMethods = Object.keys(EventEmitter.prototype).filter(
+  function (key) {
+    return typeof EventEmitter.prototype[key] === "function";
+  },
+);
 
 emitterMethods.forEach(function (fn) {
   Server.prototype[fn] = function () {
@@ -1115,5 +1175,7 @@ export {
   Namespace,
   BroadcastOperator,
   RemoteSocket,
+  DefaultEventsMap,
+  ExtendedError,
 };
 export { Event } from "./socket";
